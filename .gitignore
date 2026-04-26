@@ -1,3 +1,7 @@
+# =============================================
+# 프로젝트 전용 제외 항목
+# =============================================
+
 # 데이터 파일 (용량 너무 큼 - GitHub 100MB 제한)
 data/raw/
 data/processed/*.parquet
@@ -5,20 +9,79 @@ data/processed/*.parquet
 # 수업 PDF
 *.pdf
 
-# 주피터 노트북 체크포인트
-.ipynb_checkpoints/
-
-# Python 캐시
+# =============================================
+# Python 일반
+# =============================================
 __pycache__/
-*.pyc
-*.pyo
+*.py[codz]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+MANIFEST
+.installed.cfg
 
-# macOS
-.DS_Store
-
-# 환경 설정
+# =============================================
+# 가상환경
+# =============================================
 .env
-*.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
-# VS Code
+# =============================================
+# Jupyter
+# =============================================
+.ipynb_checkpoints
+
+# =============================================
+# 테스트 / 빌드
+# =============================================
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+coverage.xml
+*.cover
+.pytest_cache/
+build/
+dist/
+wheels/
+
+# =============================================
+# 패키지 매니저
+# =============================================
+.pdm-python
+.pdm-build/
+.pixi
+
+# =============================================
+# IDE
+# =============================================
 .vscode/
+.spyderproject
+.spyproject
+.ropeproject
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
+.ruff_cache/
+tempCodeRunnerFile.py
+
+# =============================================
+# 기타
+# =============================================
+.DS_Store
+*.log
+.abstra/
+.streamlit/secrets.toml
+__marimo__/
