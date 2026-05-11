@@ -109,6 +109,17 @@ df_tfidf = pd.read_parquet('data/processed/work_pool_tfidf_tokens.parquet')
 
 ## 할 일 1: TF-IDF 트랙 모델 학습
 
+### ⚠️ K-Fold 전 필수: 텍스트 중복 제거
+
+`youngmin_guide.md` 명시사항: EDA에서 텍스트 중복 251건(0.09%) 발견.
+K-Fold 분할 전에 제거하지 않으면 동일 기사가 train/val에 동시에 들어가 **data leakage** 발생.
+
+```python
+# K-Fold 시작 전 맨 처음에 실행
+df_tfidf = df_tfidf.drop_duplicates(subset=['title_clean']).reset_index(drop=True)
+print(f'중복 제거 후: {len(df_tfidf):,}건')  # 291,466 → 약 291,215건
+```
+
 ### 입력 데이터
 
 - `work_pool_tfidf_tokens.parquet`의 TF-IDF 벡터
@@ -151,6 +162,21 @@ model = LogisticRegression(max_iter=1000, class_weight='balanced')
 ---
 
 ## 할 일 2: BERT 트랙 모델 학습
+
+### ⚠️ K-Fold 전 필수: 텍스트 중복 제거
+
+TF-IDF 트랙과 동일하게 BERT 학습 전에도 중복 제거가 필요하다.
+
+```python
+# BERT 트랙: work_pool 3개 병합 후 중복 제거
+df = pd.concat([
+    pd.read_parquet('data/processed/work_pool_clickbait_auto.parquet'),
+    pd.read_parquet('data/processed/work_pool_clickbait_direct.parquet'),
+    pd.read_parquet('data/processed/work_pool_nonclickbait_auto.parquet'),
+], ignore_index=True)
+df = df.drop_duplicates(subset=['title_clean', 'content_clean']).reset_index(drop=True)
+print(f'중복 제거 후: {len(df):,}건')
+```
 
 ### 사전 준비
 
