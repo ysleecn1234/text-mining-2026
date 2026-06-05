@@ -6,6 +6,10 @@
 data/raw/
 data/processed/*.parquet
 data/processed/**/*.parquet
+data/processed.zip
+
+# 모델 가중치 파일 (423MB, GitHub 제한 초과)
+*.pt
 
 # 수업 PDF
 *.pdf
