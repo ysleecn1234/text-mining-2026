@@ -1,8 +1,8 @@
 """
-외부 기사 이진 분류 — KLUE-RoBERTa 최종 모델
+외부 기사 이진 분류 — KLUE-RoBERTa 최종 모델 (max_length 128 vs 512 비교)
 - klue_binary_final.pt : 이진 분류 (0=정상, 1=낚시성)
 - 실제 수집 기사 11건 (2026년 5~6월)
-- 모델이 스스로 낚시성/정상을 판단한 결과만 출력 (정답 라벨 없음)
+- 동일 기사를 MAX_LEN=128 / MAX_LEN=512 로 각각 추론하여 결과 비교
 - 실행 환경 : 로컬 CPU
 """
 
@@ -15,7 +15,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 MODEL_NAME = "klue/roberta-base"
 BIN_PT     = os.path.join(BASE_DIR, "klue_binary_final.pt")
-MAX_LEN    = 128
+MAX_LENS   = [128, 512]   # 비교할 max_length 목록
 
 # ── 실제 수집 기사 11건 ────────────────────────────────────────────────
 # (제목, 본문 앞부분, 출처)  ← 정답 라벨 없음, 모델이 직접 판단
@@ -101,6 +101,61 @@ SAMPLES = [
 ]
 
 # ── 추론 ──────────────────────────────────────────────────────────────
+def run_inference(model, tokenizer, max_len):
+    """주어진 max_len으로 SAMPLES 전체 추론 후 결과 리스트 반환"""
+    LABEL = {0: "정상", 1: "낚시성"}
+    results = []
+    for title, content, source in SAMPLES:
+        enc = tokenizer(
+            text=title,
+            text_pair=content,
+            truncation="only_second",
+            max_length=max_len,
+            padding="max_length",
+            return_tensors="pt",
+        )
+        with torch.no_grad():
+            out = model(**enc)
+        prob = F.softmax(out.logits, dim=-1).squeeze()
+        pred = int(torch.argmax(prob))
+        results.append({
+            "title":  title,
+            "source": source,
+            "pred":   LABEL[pred],
+            "p_n":    float(prob[0]),
+            "p_c":    float(prob[1]),
+        })
+    return results
+
+
+def print_results(results, max_len):
+    LABEL_CB = sum(1 for r in results if r["pred"] == "낚시성")
+    print(f"\n{'='*85}")
+    print(f"  [MAX_LEN = {max_len}]  외부 기사 이진 분류 예측 결과")
+    print(f"{'='*85}")
+    print(f"  {'No':>3}  {'제목':40}  {'출처':8}  {'판정':6}  {'정상%':7}  {'낚시%':7}")
+    print(f"  {'-'*81}")
+    for i, r in enumerate(results):
+        print(f"  {i+1:>3}  {r['title'][:40]:<40}  {r['source']:<8}  {r['pred']:<6}  {r['p_n']*100:6.2f}%  {r['p_c']*100:6.2f}%")
+    print(f"  {'-'*81}")
+    print(f"  낚시성 판정: {LABEL_CB}건 / 정상 판정: {len(results)-LABEL_CB}건")
+
+
+def print_diff(res128, res512):
+    """두 설정 간 판정이 달라진 기사 출력"""
+    diffs = [(i, r128, r512) for i, (r128, r512) in enumerate(zip(res128, res512))
+             if r128["pred"] != r512["pred"]]
+    print(f"\n{'='*85}")
+    print(f"  [판정 변경 기사] 128 vs 512 비교  —  총 {len(diffs)}건 변경")
+    print(f"{'='*85}")
+    if not diffs:
+        print("  판정이 변경된 기사 없음 (두 설정 결과 동일)")
+    for i, r128, r512 in diffs:
+        print(f"  No.{i+1}  {r128['title'][:50]}")
+        print(f"        128 → {r128['pred']}  (낚시 {r128['p_c']*100:.2f}%)")
+        print(f"        512 → {r512['pred']}  (낚시 {r512['p_c']*100:.2f}%)")
+
+
 def main():
     print("KLUE-RoBERTa 베이스 모델 로딩 중...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -111,50 +166,30 @@ def main():
     model.eval()
     print("로딩 완료. 추론 시작...\n")
 
-    LABEL = {0: "정상", 1: "낚시성"}
-    results = []
+    all_results = {}
+    for max_len in MAX_LENS:
+        print(f"  MAX_LEN={max_len} 추론 중...")
+        all_results[max_len] = run_inference(model, tokenizer, max_len)
 
-    for title, content, source in SAMPLES:
-        enc = tokenizer(
-            text=title,
-            text_pair=content,
-            truncation="only_second",
-            max_length=MAX_LEN,
-            padding="max_length",
-            return_tensors="pt",
-        )
-        with torch.no_grad():
-            out = model(**enc)
-        prob = F.softmax(out.logits, dim=-1).squeeze()
-        pred = int(torch.argmax(prob))
-        p_normal    = float(prob[0])
-        p_clickbait = float(prob[1])
-        results.append((title, source, pred, p_normal, p_clickbait))
+    # 각 설정별 결과 출력
+    for max_len in MAX_LENS:
+        print_results(all_results[max_len], max_len)
 
-    # ── 결과 출력 ─────────────────────────────────────────────────────
-    print("=" * 85)
-    print("  외부 기사 이진 분류 — KLUE-RoBERTa 모델 예측 결과")
-    print("=" * 85)
-    print(f"  {'No':>3}  {'제목':40}  {'출처':8}  {'모델 판정':6}  {'정상%':7}  {'낚시%':7}")
-    print(f"  {'-'*81}")
+    # 두 설정 비교
+    print_diff(all_results[128], all_results[512])
 
-    clickbait_count = 0
-    for i, (title, source, pred, p_n, p_c) in enumerate(results):
-        pred_str = LABEL[pred]
-        if pred == 1:
-            clickbait_count += 1
-        print(f"  {i+1:>3}  {title[:40]:<40}  {source:<8}  {pred_str:<6}  {p_n*100:6.2f}%  {p_c*100:6.2f}%")
-
-    print(f"\n  {'-'*81}")
-    print(f"  전체 {len(results)}건 중 낚시성 판정: {clickbait_count}건 / 정상 판정: {len(results)-clickbait_count}건")
-    print("=" * 85)
-
-    # TSV 저장
+    # TSV 저장 (비교 포함)
     tsv_path = os.path.join(BASE_DIR, "external_test_binary_result.tsv")
     with open(tsv_path, "w", encoding="utf-8") as f:
-        f.write("No\t제목\t출처\t모델판정\t정상확률\t낚시성확률\n")
-        for i, (title, source, pred, p_n, p_c) in enumerate(results):
-            f.write(f"{i+1}\t{title}\t{source}\t{LABEL[pred]}\t{p_n*100:.2f}%\t{p_c*100:.2f}%\n")
+        f.write("No\t제목\t출처\t판정_128\t정상%_128\t낚시%_128\t판정_512\t정상%_512\t낚시%_512\t판정변경\n")
+        for i, (r128, r512) in enumerate(zip(all_results[128], all_results[512])):
+            changed = "변경" if r128["pred"] != r512["pred"] else "-"
+            f.write(
+                f"{i+1}\t{r128['title']}\t{r128['source']}\t"
+                f"{r128['pred']}\t{r128['p_n']*100:.2f}%\t{r128['p_c']*100:.2f}%\t"
+                f"{r512['pred']}\t{r512['p_n']*100:.2f}%\t{r512['p_c']*100:.2f}%\t"
+                f"{changed}\n"
+            )
     print(f"\n  TSV 저장 완료 -> {tsv_path}")
 
 if __name__ == "__main__":
